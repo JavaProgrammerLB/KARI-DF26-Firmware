@@ -3,7 +3,7 @@
 #include <cassert>
 JsonDocument request() {
  JsonDocument d;auto h=d.to<JsonObject>();h["version"]=1;h["board"]=HARDWARE_BOARD;
- const int values[]={1,2,4,8,9,21};for(int i=0;i<6;++i)h["pins"][HARDWARE_PIN_NAMES[i]]=values[i];return d;
+ const int values[]={1,2,8,9,10,21};for(int i=0;i<6;++i)h["pins"][HARDWARE_PIN_NAMES[i]]=values[i];return d;
 }
 int main() {
  HardwareConfig blank;blank.load(true);assert(!blank.ready && !blank.configured());
@@ -18,12 +18,13 @@ int main() {
  HardwareConfig afterIdentity;afterIdentity.load(true);assert(afterIdentity.configured() && afterIdentity.profile.pins[0]==1);
  auto saved=Preferences::bytes;Preferences::writeOk=false;doc["pins"]["ena"]=10;assert(!afterRestart.save(doc.as<JsonObjectConst>()));assert(Preferences::bytes==saved);assert(afterRestart.profile.pins[0]==1);
  Preferences::writeOk=true;
- for(auto bad : {"bool","float","duplicate","reserved","version","versionbool","extra","board","missing"}) {
+ for(auto bad : {"bool","float","duplicate","reserved","ultrasonic","version","versionbool","extra","board","missing"}) {
   auto invalid=request();
   if(!strcmp(bad,"bool"))invalid["pins"]["ena"]=true;
   if(!strcmp(bad,"float"))invalid["pins"]["ena"]=1.5;
   if(!strcmp(bad,"duplicate"))invalid["pins"]["ena"]=2;
   if(!strcmp(bad,"reserved"))invalid["pins"]["ena"]=33;
+  if(!strcmp(bad,"ultrasonic"))invalid["pins"]["ena"]=ULTRASONIC_TRIG_PIN;
   if(!strcmp(bad,"version"))invalid["version"]=2;
   if(!strcmp(bad,"versionbool"))invalid["version"]=true;
   if(!strcmp(bad,"extra"))invalid["pins"]["extra"]=10;

@@ -65,7 +65,7 @@ HTTP uses existing Basic/CSRF authentication; BLE and USB mutations require `adm
 
 USB UART0 (115200) and native Serial/JTAG use newline-delimited JSON with string IDs up to 80 bytes and requests up to 2048 bytes. The base hardware commands are `hardware_get`, `hardware_set`, `device_status`; 2.2.0 identity/authentication extensions are documented below. Ignore boot log lines and correlate reply IDs; errors are `{type:"error",accepted:false,message:...}`. No USB motion or Wi-Fi credentials commands exist. Some UART bridges reset the board when opened; allow boot to finish before sending management requests rather than repeatedly reflashing on a readback timeout. Changing passwords still follows the existing firmware management policy.
 
-Pin order is ENA, IN1, IN2, IN3, IN4, ENB; A is left, B is right. All must be distinct integers from the board profile's allowed subset. GPIO38/48 (board LEDs), straps, UART0, native USB and memory pins are reserved. This profile covers DevKitC-1-compatible layouts, not every board carrying an N16R8/N8R8 module.
+Pin order is ENA, IN1, IN2, IN3, IN4, ENB; A is left, B is right. All must be distinct integers from the board profile's allowed subset. GPIO38/48 (board LEDs), straps, UART0, native USB and memory pins are reserved. GPIO 4 (Trig) and GPIO 18 (Echo) are reserved for the HC-SR04-P ultrasonic sensor and are rejected as motor outputs. This profile covers DevKitC-1-compatible layouts, not every board carrying an N16R8/N8R8 module.
 
 OTA applications embed `KARI_HW_V1|BOARD|1|PARTITION|END`, checked across streaming upload chunks before activating the new application. Missing/mismatched descriptors, including 2.0.x packages, are rejected. This is compatibility metadata, not a cryptographic signature. N16R8 keeps the legacy manifest URL; N8R8 uses `kari-s3-n8r8-manifest.json`. Local-file uploads follow the same device-side policy. Clients remember the last connected board for offline downloads; connect once to an N8R8 device before preparing its first offline package.
 
@@ -158,7 +158,7 @@ HTTP 沿用 Basic/CSRF，BLE/USB 修改需 admin_password。保存前撤销控�
 
 UART0（115200）及原生 Serial/JTAG 使用换行 JSON，字符串 ID 最多 80 字节，请求最多 2048 字节；忽略启动日志并关联响应 ID。基础硬件命令为 hardware_get/hardware_set/device_status；2.2.0 的身份管理扩展见下文。USB 不提供运动或 Wi-Fi 凭据操作。打开串口可能触发桥接板复位，应等待启动完成再发送管理请求，不能将回读超时直接视为需要重刷。
 
-引脚顺序为 ENA、IN1、IN2、IN3、IN4、ENB；A 为左、B 为右。必须是板型允许集合中的互异整数；板载 LED 的 GPIO38/48、启动绑带、UART0、原生 USB 和存储器相关引脚保留。本配置针对 DevKitC-1 兼容布局，不适用于所有带 N16R8/N8R8 模组的板。
+引脚顺序为 ENA、IN1、IN2、IN3、IN4、ENB；A 为左、B 为右。必须是板型允许集合中的互异整数；板载 LED 的 GPIO38/48、启动绑带、UART0、原生 USB 和存储器相关引脚保留。GPIO 4（Trig）和 GPIO 18（Echo）保留给 HC-SR04-P 超声波模块，不能用作电机输出。本配置针对 DevKitC-1 兼容布局，不适用于所有带 N16R8/N8R8 模组的板。
 
 OTA 应用嵌入 `KARI_HW_V1|BOARD|1|PARTITION|END`，跨上传分块检查后才激活。缺失或不匹配描述（包括 2.0.x 镜像）拒绝；它是兼容元数据而非加密签名。N16R8 沿用默认清单，N8R8 使用 kari-s3-n8r8-manifest.json。本地文件执行相同设备策略；客户端记住上次板型以离线下载，N8R8 第一次准备离线包前应先连接一次。
 

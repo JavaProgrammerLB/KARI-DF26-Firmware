@@ -8,6 +8,7 @@
 
 #include <math.h>
 #include "KariWifiOta.h"
+#include "ObstaclePolicy.h"
 
 KariWifiOta wifiOta;
 String commandSource = "ble";
@@ -19,11 +20,16 @@ void testDeviceWheels(float left, float right);
 void processUsbManagement();
 bool nvsHealthy=false;
 bool motorPinsReady=false;
+bool ultrasonicReady=false;
+uint32_t lastUltrasonicAt=0;
+ObstacleAvoidance obstacle;
 
 // This firmware intentionally contains no AI, personality, or Life
 // Engine logic. The phone/server side will decide high-level intent later.
 // The ESP32 is only the final motor safety layer that executes short, clamped
-// motion commands and automatically stops.
+// motion commands and automatically stops. An HC-SR04-style range sensor can
+// override those commands while an obstacle is very close: stop, turn right,
+// then release control back to the remote command.
 
 // Loaded only from a validated persistent hardware profile, before GPIO initialization.
 uint8_t LEFT_IN1 = 0;
@@ -139,6 +145,11 @@ void setDrive(float linear, float angular, uint32_t durationMs, uint32_t rampMs,
               const char *label);
 void updateRampedMotion(bool force = false);
 void applyMotorSpeeds(float leftSpeed, float rightSpeed);
+void writeMotorSpeeds(float leftSpeed, float rightSpeed);
+void setupUltrasonic();
+void pollUltrasonic(uint32_t now);
+int readUltrasonicCm();
+bool serviceObstacle(float leftSpeed, float rightSpeed);
 void setMotorSide(uint8_t in1Pin, uint8_t in2Pin, uint8_t enablePin, float speed,
                   bool invert, uint8_t pwmChannel);
 bool attachMotorPwm(uint8_t pin, uint8_t channel);
@@ -187,6 +198,7 @@ void setup() {
   Serial.println("[BOOT] ESP32 will only execute short, safe motor commands");
 
   setupPins();
+  setupUltrasonic();
   stopMotors("boot");
   wifiOta.begin(stopForDevice, executeDeviceCommand, testDeviceWheels);
   if(nvsHealthy) setupBle();
@@ -208,9 +220,10 @@ void loop() {
     }
     return;
   }
+  pollUltrasonic(now);
   updateRampedMotion();
 
-  if (!motionActive && !isStopped()) {
+  if (!motionActive && !isStopped() && !obstacle.active()) {
     Serial.println("[SAFE] No active motion scheduled, forcing stop");
     stopMotors("idle_safety");
   }
@@ -765,6 +778,9 @@ void sendTelemetry() {
   doc["ramp_ms"] = motionRampMs;
   doc["motion_label"] = motionLabel;
   doc["motion_remaining_ms"] = motionRemainingMs(now);
+  if (obstacle.haveDistance) doc["obstacle_cm"] = obstacle.lastDistanceCm;
+  else doc["obstacle_cm"] = nullptr;
+  doc["obstacle_override"] = obstacle.active();
   doc["last_command_age_ms"] =
       lastCommandAt == 0 ? 0 : static_cast<uint32_t>(now - lastCommandAt);
 
@@ -899,12 +915,16 @@ void setDrive(float linear, float angular, uint32_t durationMs, uint32_t rampMs,
 
 void updateRampedMotion(bool force) {
   if (!motionActive) {
+    // A short avoidance maneuver still finishes after the remote pulse expires.
+    if (obstacle.active()) applyMotorSpeeds(0.0f, 0.0f);
     return;
   }
 
   const uint32_t now = millis();
 
-  if (!force && now - lastMotorUpdateAt < MOTOR_UPDATE_INTERVAL_MS) {
+  // A fresh close reading must not wait out the ramp cadence before the stop.
+  if (!force && now - lastMotorUpdateAt < MOTOR_UPDATE_INTERVAL_MS &&
+      !obstacle.active() && !obstacle.veryClose()) {
     return;
   }
 
@@ -948,7 +968,66 @@ void updateRampedMotion(bool force) {
 }
 
 
+void setupUltrasonic() {
+  if (wifiOta.hardware.configured()) {
+    for (uint8_t pin : wifiOta.hardware.profile.pins) {
+      if (reservedUltrasonicPin(pin)) {
+        Serial.println("[US] Motor profile uses an ultrasonic GPIO; ranging disabled");
+        return;
+      }
+    }
+  }
+  pinMode(ULTRASONIC_TRIG_PIN, OUTPUT);
+  digitalWrite(ULTRASONIC_TRIG_PIN, LOW);
+  pinMode(ULTRASONIC_ECHO_PIN, INPUT);
+  ultrasonicReady = true;
+  Serial.printf("[US] HC-SR04 trig=%d echo=%d stop<%d cm\n", ULTRASONIC_TRIG_PIN,
+                ULTRASONIC_ECHO_PIN, OBSTACLE_STOP_DISTANCE_CM);
+}
+
+int readUltrasonicCm() {
+  digitalWrite(ULTRASONIC_TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(ULTRASONIC_TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(ULTRASONIC_TRIG_PIN, LOW);
+  const unsigned long echoUs = pulseIn(ULTRASONIC_ECHO_PIN, HIGH, ULTRASONIC_ECHO_TIMEOUT_US);
+  return ultrasonicCmFromEchoUs(static_cast<uint32_t>(echoUs));
+}
+
+void pollUltrasonic(uint32_t now) {
+  // Ranging blocks on the echo pulse. Skip it while an update owns the CPU.
+  if (!ultrasonicReady || wifiOta.locked()) return;
+  if (lastUltrasonicAt && uint32_t(now - lastUltrasonicAt) < ULTRASONIC_SAMPLE_INTERVAL_MS) return;
+  lastUltrasonicAt = now;
+  obstacle.noteDistance(readUltrasonicCm());
+}
+
+// Replaces outgoing wheel speeds while the avoidance maneuver is active.
+// Returns true when the caller must not also write the original command.
+bool serviceObstacle(float leftSpeed, float rightSpeed) {
+  const ObstaclePhase before = obstacle.phase;
+  const bool commanded = fabsf(leftSpeed) > 0.0001f || fabsf(rightSpeed) > 0.0001f;
+  obstacle.service(millis(), commanded);
+  if (obstacle.phase != before) {
+    Serial.printf("[US] %s distance=%d cm\n", obstacle.phaseName(), obstacle.lastDistanceCm);
+  }
+  if (!obstacle.active()) return false;
+  float left = 0.0f, right = 0.0f;
+  obstacle.overrideSpeeds(left, right);
+  writeMotorSpeeds(left, right);
+  return true;
+}
+
 void applyMotorSpeeds(float leftSpeed, float rightSpeed) {
+  if(!motorPinsReady) { currentLeftSpeed=currentRightSpeed=0; return; }
+  // Command paths can run before this loop iteration's periodic sample.
+  pollUltrasonic(millis());
+  if (ultrasonicReady && serviceObstacle(leftSpeed, rightSpeed)) return;
+  writeMotorSpeeds(leftSpeed, rightSpeed);
+}
+
+void writeMotorSpeeds(float leftSpeed, float rightSpeed) {
   if(!motorPinsReady) { currentLeftSpeed=currentRightSpeed=0; return; }
   currentLeftSpeed = applyDeadband(clampSpeed(leftSpeed));
   currentRightSpeed = applyDeadband(clampSpeed(rightSpeed));
@@ -1011,6 +1090,9 @@ void writeMotorPwm(uint8_t pin, uint8_t channel, uint32_t duty) {
 
 
 void stopMotors(const char *reason) {
+  // Duration expiry must not abort a stop-then-turn that is already underway.
+  // Explicit stops, disconnects, faults and OTA still cancel the maneuver.
+  if (!reason || strcmp(reason, "duration_timeout") != 0) obstacle.cancel();
   const bool wasMoving = motionActive || !isStopped();
 
   motionActive = false;
@@ -1026,7 +1108,7 @@ void stopMotors(const char *reason) {
   motionLabel[0] = '\0';
   applyMotorSpeeds(0.0f, 0.0f);
 
-  if (wasMoving) {
+  if (wasMoving && !obstacle.active()) {
     Serial.printf("[SAFE] Motor stop: %s\n", reason);
   }
 }
@@ -1039,6 +1121,7 @@ void addConfig(JsonObject target) {
   target["deadband"] = runtimeDeadband;
   target["default_ramp_ms"] = defaultRampMs;
   target["min_pwm"] = minPwm;
+  target["obstacle_distance_cm"] = OBSTACLE_STOP_DISTANCE_CM;
 
 }
 
@@ -1156,7 +1239,8 @@ uint32_t motionRemainingMs(uint32_t now) {
 }
 
 const char *motorState() {
-  if (isStopped()) {
+  if (obstacle.phase == ObstaclePhase::Turn) return "rotating_right";
+  if (obstacle.phase == ObstaclePhase::Stop || isStopped()) {
     return "stopped";
   }
 

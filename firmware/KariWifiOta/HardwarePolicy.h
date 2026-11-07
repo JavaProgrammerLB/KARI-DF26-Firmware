@@ -25,10 +25,11 @@ struct HardwareProfile {
   uint8_t pins[6] = {KARI_DEFAULT_PINS};
   uint8_t reserved[2] = {0,0};
 };
+static_assert(ULTRASONIC_TRIG_PIN != ULTRASONIC_ECHO_PIN, "ultrasonic pins collide");
 inline bool validHardwareProfile(const HardwareProfile &p) {
   if(p.version != 1 || p.flashMb != KARI_FLASH_MB || p.reserved[0] || p.reserved[1]) return false;
   for(size_t i=0;i<6;++i) {
-    if(!allowedMotorPin(p.pins[i])) return false;
+    if(!allowedMotorPin(p.pins[i]) || reservedUltrasonicPin(p.pins[i])) return false;
     for(size_t j=0;j<i;++j) if(p.pins[i]==p.pins[j]) return false;
   }
   return true;

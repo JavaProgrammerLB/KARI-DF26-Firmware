@@ -19,7 +19,18 @@ ESP32-S3 底盘固件：BLE / Wi-Fi 控制、热点配网、设备面板、持�
 | 左 IN1 / IN2 / ENA | 16 / 15 / 17 |
 | 右 IN3 / IN4 / ENB | 7 / 6 / 5 |
 
+| HC-SR04 / HC-SR04-P | 连接 |
+| --- | --- |
+| Vcc | 3V3（宽压模块 3–5.5 V，不要接 ESP32 的 5 V 脚） |
+| Trig | GPIO 4 |
+| Echo | GPIO 18（HC-SR04-P 可直接接 3.3 V GPIO） |
+| Gnd | GND（与 ESP32、L298N 共地） |
+
 GPIO 为芯片编号，不是排针序号。ESP32 与 L298N 共地，拔掉 ENA / ENB 跳帽。首次配置前断开电机电源，未确认接线前固件不启用电机输出；驱动输入浮空时需硬件下拉或保持电机断电。
+
+超声波模块正面针序为 Vcc / Trig / Echo / Gnd，背面丝印为 Gnd / Echo / Trig / Vcc。GPIO 4 和 GPIO 18 保留给测距，不能再配置成电机脚；默认电机脚 17 / 16 / 15 / 7 / 6 / 5 与这两脚不冲突。
+
+前方距离小于 `OBSTACLE_STOP_DISTANCE_CM`（默认 25 cm，见 `firmware/KariWifiOta/ObstaclePolicy.h`）时，固件接管电机输出：先停车约 200 ms，再按已校准的逻辑方向右转约 400 ms（与方向测试里的右转相同：左轮为正、右轮为负）。距离回到阈值以外，或这次短右转结束后，控制交还原来的遥控。若前方仍然过近且遥控仍在驱动，会再次停车并右转，不会把前进指令直接送到电机。静止时旁边有障碍不会自己转。无回波或测距超时视为远处，避免传感器缺失时一直转向。这是安全接管，不是自主导航。
 
 ## 首次安装
 
@@ -88,7 +99,18 @@ ESP32-S3 chassis firmware provides BLE/Wi-Fi control, hotspot provisioning, devi
 | Left IN1 / IN2 / ENA | 16 / 15 / 17 |
 | Right IN3 / IN4 / ENB | 7 / 6 / 5 |
 
+| HC-SR04 / HC-SR04-P | Connection |
+| --- | --- |
+| Vcc | 3V3 (wide-voltage module, 3–5.5 V; do not use the ESP32 5 V pin) |
+| Trig | GPIO 4 |
+| Echo | GPIO 18 (HC-SR04-P echo may connect directly to a 3.3 V GPIO) |
+| Gnd | GND (common with the ESP32 and L298N) |
+
 Use chip GPIO numbers, not header positions. Share ground and remove ENA/ENB jumpers. Disconnect motor power for initial configuration. Firmware does not enable motor output before wiring confirmation; floating inputs need hardware pull-downs or disconnected power.
+
+The module's front pin order is Vcc / Trig / Echo / Gnd; the back legend reads Gnd / Echo / Trig / Vcc. GPIO 4 and GPIO 18 are reserved for ranging and cannot be reused as motor outputs. Default motor pins 17 / 16 / 15 / 7 / 6 / 5 do not collide with them.
+
+When the forward distance is below `OBSTACLE_STOP_DISTANCE_CM` (default 25 cm, `firmware/KariWifiOta/ObstaclePolicy.h`), firmware overrides motor output: stop for about 200 ms, then turn right for about 400 ms in the calibrated logical frame (same signs as the direction test's right turn: left wheel positive, right wheel negative). After the distance clears, or after that short turn, normal remote control resumes. If it is still too close and a drive command is still active, the car stops and turns right again instead of passing the forward command through. A stationary car does not spin just because something is nearby. A missing echo or range timeout counts as far, so a missing sensor does not keep the chassis turning. This is a safety override, not an autonomy stack.
 
 ### First installation
 

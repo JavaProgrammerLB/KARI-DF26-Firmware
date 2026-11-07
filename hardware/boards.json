@@ -41,6 +41,10 @@
       "in3": 7,
       "in4": 6,
       "enb": 5
+    },
+    "ultrasonic": {
+      "trig": 4,
+      "echo": 18
     }
   },
   "n8r8": {
@@ -85,6 +89,10 @@
       "in3": 7,
       "in4": 6,
       "enb": 5
+    },
+    "ultrasonic": {
+      "trig": 4,
+      "echo": 18
     }
   }
 }

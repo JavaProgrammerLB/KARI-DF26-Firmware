@@ -6,3 +6,8 @@ constexpr bool allowedMotorPin(int pin) {
   return false;
 }
 #define KARI_DEFAULT_PINS 17,16,15,7,6,5
+constexpr int ULTRASONIC_TRIG_PIN = 4;
+constexpr int ULTRASONIC_ECHO_PIN = 18;
+constexpr bool reservedUltrasonicPin(int pin) {
+  return pin==ULTRASONIC_TRIG_PIN || pin==ULTRASONIC_ECHO_PIN;
+}

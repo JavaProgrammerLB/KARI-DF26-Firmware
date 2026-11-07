@@ -6,7 +6,7 @@ const boards=JSON.parse(await readFile(new URL('../boards.json',import.meta.url)
 const profile={version:1,board:'n16r8',pins:boards.n16r8.default_pins};
 test('valid custom wiring and invalid GPIO types/reservations',()=>{
  assert.equal(validateProfile(profile,boards),profile);
- for(const pin of [true,17.5,'17',0,3,19,20,33,37,38,43,44,45,46,48])assert.throws(()=>validateProfile({...profile,pins:{...profile.pins,ena:pin}},boards));
+ for(const pin of [true,17.5,'17',0,3,4,18,19,20,33,37,38,43,44,45,46,48])assert.throws(()=>validateProfile({...profile,pins:{...profile.pins,ena:pin}},boards));
  assert.throws(()=>validateProfile({...profile,pins:{...profile.pins,ena:16}},boards));
 });
 test('blank/known layouts allowed, unknown or truncated rejected',()=>{
