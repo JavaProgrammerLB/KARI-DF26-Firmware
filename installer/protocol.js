@@ -6,6 +6,10 @@ export function validateProfile(profile, boards) {
   const pins = profile.pins;
   if (!pins || Object.keys(pins).length !== 6 || pinNames.some(k => !Number.isInteger(pins[k]) || !spec.allowed_gpio.includes(pins[k])))
     throw Error('Invalid/reserved GPIO / GPIO 无效或已被保留');
+  const sensor = spec.ultrasonic || {};
+  const reserved = [sensor.trig, sensor.echo];
+  if (pinNames.some(k => reserved.includes(pins[k])))
+    throw Error('Invalid/reserved GPIO / GPIO 无效或已被保留');
   if (new Set(Object.values(pins)).size !== 6) throw Error('Duplicate GPIO / GPIO 不能重复');
   return profile;
 }

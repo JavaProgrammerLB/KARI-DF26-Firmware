@@ -36,6 +36,10 @@ with tempfile.TemporaryDirectory() as tmp:
  binary=Path(tmp)/'release-version-test'
  subprocess.run(['clang++','-std=c++17','-Wall','-Wextra','-Werror',str(root/'firmware/KariWifiOta/tests/release_version_test.cpp'),'-o',str(binary)],check=True)
  subprocess.run([str(binary)],check=True)
+with tempfile.TemporaryDirectory() as tmp:
+ binary=Path(tmp)/'obstacle-test'
+ subprocess.run(['clang++','-std=c++17','-Wall','-Wextra','-Werror',str(root/'firmware/KariWifiOta/tests/obstacle_test.cpp'),'-o',str(binary)],check=True)
+ subprocess.run([str(binary)],check=True)
 for flash in (8,16):
  with tempfile.TemporaryDirectory() as tmp:
   binary=Path(tmp)/'hardware-test'
@@ -58,5 +62,13 @@ if skill_boards.exists():assert json.loads(skill_boards.read_text())==boards
 # C++/Python/JS pin rules derive the same conservative board subset.
 allowed=[1,2,*range(4,19),21,*range(39,43),47]
 assert all(b['allowed_gpio']==allowed for b in boards.values())
+for b in boards.values():
+ assert b['ultrasonic']=={'trig':4,'echo':18}
+ assert 4 not in b['default_pins'].values() and 18 not in b['default_pins'].values()
+policy=(root/'firmware/KariWifiOta/HardwarePolicy.h').read_text()
+assert 'reservedUltrasonicPin' in policy
+avoidance=(root/'firmware/KariWifiOta/ObstaclePolicy.h').read_text()
+assert 'OBSTACLE_STOP_DISTANCE_CM = 25' in avoidance
+assert 'setupUltrasonic' in ino and 'serviceObstacle' in ino
 assert 'nvs_flash_erase' not in ino
 print('PASS: firmware/client command parity, no obsolete actuator paths, release destination and policy')
